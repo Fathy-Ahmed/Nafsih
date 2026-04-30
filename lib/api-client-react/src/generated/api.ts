@@ -5,18 +5,25 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import type {
+  MutationFunction,
   QueryFunction,
   QueryKey,
+  UseMutationOptions,
+  UseMutationResult,
   UseQueryOptions,
   UseQueryResult,
 } from "@tanstack/react-query";
 
-import type { HealthStatus } from "./api.schemas";
+import type {
+  CompanionChatRequest,
+  CompanionReply,
+  HealthStatus,
+} from "./api.schemas";
 
 import { customFetch } from "../custom-fetch";
-import type { ErrorType } from "../custom-fetch";
+import type { ErrorType, BodyType } from "../custom-fetch";
 
 type AwaitedInput<T> = PromiseLike<T> | T;
 
@@ -99,3 +106,93 @@ export function useHealthCheck<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+/**
+ * Sends the recent conversation to the Arabic-speaking faith-grounded
+companion and returns a single assistant reply. The client is responsible
+for storing chat history (AsyncStorage) and sending the relevant context.
+
+ * @summary Send a message to the Nafsih companion
+ */
+export const getCompanionChatUrl = () => {
+  return `/api/companion/chat`;
+};
+
+export const companionChat = async (
+  companionChatRequest: CompanionChatRequest,
+  options?: RequestInit,
+): Promise<CompanionReply> => {
+  return customFetch<CompanionReply>(getCompanionChatUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(companionChatRequest),
+  });
+};
+
+export const getCompanionChatMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof companionChat>>,
+    TError,
+    { data: BodyType<CompanionChatRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof companionChat>>,
+  TError,
+  { data: BodyType<CompanionChatRequest> },
+  TContext
+> => {
+  const mutationKey = ["companionChat"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof companionChat>>,
+    { data: BodyType<CompanionChatRequest> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return companionChat(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CompanionChatMutationResult = NonNullable<
+  Awaited<ReturnType<typeof companionChat>>
+>;
+export type CompanionChatMutationBody = BodyType<CompanionChatRequest>;
+export type CompanionChatMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Send a message to the Nafsih companion
+ */
+export const useCompanionChat = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof companionChat>>,
+    TError,
+    { data: BodyType<CompanionChatRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof companionChat>>,
+  TError,
+  { data: BodyType<CompanionChatRequest> },
+  TContext
+> => {
+  return useMutation(getCompanionChatMutationOptions(options));
+};

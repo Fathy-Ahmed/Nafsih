@@ -14,3 +14,42 @@ import * as zod from "zod";
 export const HealthCheckResponse = zod.object({
   status: zod.string(),
 });
+
+/**
+ * Sends the recent conversation to the Arabic-speaking faith-grounded
+companion and returns a single assistant reply. The client is responsible
+for storing chat history (AsyncStorage) and sending the relevant context.
+
+ * @summary Send a message to the Nafsih companion
+ */
+export const companionChatBodyMoodMax = 60;
+
+export const companionChatBodyMessagesItemContentMax = 4000;
+
+export const companionChatBodyMessagesMax = 30;
+
+export const CompanionChatBody = zod.object({
+  mood: zod
+    .string()
+    .max(companionChatBodyMoodMax)
+    .optional()
+    .describe(
+      'Optional mood tag picked by the user (e.g. \"متوتر\", \"حزين\", \"قلِق\")',
+    ),
+  messages: zod
+    .array(
+      zod.object({
+        role: zod.enum(["user", "assistant"]),
+        content: zod
+          .string()
+          .min(1)
+          .max(companionChatBodyMessagesItemContentMax),
+      }),
+    )
+    .min(1)
+    .max(companionChatBodyMessagesMax),
+});
+
+export const CompanionChatResponse = zod.object({
+  reply: zod.string(),
+});

@@ -25,3 +25,14 @@ pnpm workspace monorepo using TypeScript. Each package manages its own dependenc
 - `pnpm --filter @workspace/api-server run dev` — run API server locally
 
 See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and package details.
+
+## Artifacts
+
+- **`artifacts/api-server`** — Express 5 API at `/api`. Hosts the `/api/companion/chat` endpoint that proxies an Anthropic chat call (via the `lib/integrations-anthropic-ai` Replit AI integration) with an Arabic faith-grounded system prompt.
+- **`artifacts/mockup-sandbox`** — Vite preview server for canvas mockups.
+- **`artifacts/nafsih`** — Expo Router mobile app, Arabic-first ("نفسيّه"). Uses Cairo Google fonts, sage/sand palette, RTL per-component (no global `I18nManager.forceRTL`). Persists state via AsyncStorage in `contexts/AppContext.tsx`. Tabs: الآن (home), المكتبة (library), اليوميات (journal). Push routes: `welcome`, `companion`, `breathing`. Calls the API via `setBaseUrl` with `EXPO_PUBLIC_DOMAIN`.
+
+## Notes
+
+- All Arabic copy and authentic Quran/hadith content lives in `artifacts/nafsih/constants/arabic.ts`.
+- No emojis anywhere in the Nafsih product copy or UI.

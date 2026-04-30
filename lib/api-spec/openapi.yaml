@@ -10,6 +10,8 @@ servers:
 tags:
   - name: health
     description: Health operations
+  - name: companion
+    description: Nafsih AI companion (Arabic mental support chat)
 paths:
   /healthz:
     get:
@@ -24,6 +26,28 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /companion/chat:
+    post:
+      operationId: companionChat
+      tags: [companion]
+      summary: Send a message to the Nafsih companion
+      description: |
+        Sends the recent conversation to the Arabic-speaking faith-grounded
+        companion and returns a single assistant reply. The client is responsible
+        for storing chat history (AsyncStorage) and sending the relevant context.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CompanionChatRequest"
+      responses:
+        "200":
+          description: Assistant reply
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CompanionReply"
 components:
   schemas:
     HealthStatus:
@@ -33,4 +57,38 @@ components:
           type: string
       required:
         - status
-
+    CompanionMessage:
+      type: object
+      properties:
+        role:
+          type: string
+          enum: [user, assistant]
+        content:
+          type: string
+          minLength: 1
+          maxLength: 4000
+      required:
+        - role
+        - content
+    CompanionChatRequest:
+      type: object
+      properties:
+        mood:
+          type: string
+          description: Optional mood tag picked by the user (e.g. "متوتر", "حزين", "قلِق")
+          maxLength: 60
+        messages:
+          type: array
+          minItems: 1
+          maxItems: 30
+          items:
+            $ref: "#/components/schemas/CompanionMessage"
+      required:
+        - messages
+    CompanionReply:
+      type: object
+      properties:
+        reply:
+          type: string
+      required:
+        - reply

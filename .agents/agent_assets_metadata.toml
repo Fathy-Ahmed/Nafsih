@@ -1,0 +1,8 @@
+uploads = []
+outputs = []
+
+[[generated]]
+id = "6sbZyK4l156q1YhcolnJw"
+uri = "file://artifacts/nafsih/assets/images/icon.png"
+type = "image"
+title = "generated_image"

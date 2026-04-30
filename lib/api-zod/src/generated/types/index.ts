@@ -6,4 +6,8 @@
  * OpenAPI spec version: 0.1.0
  */
 
+export * from "./companionChatRequest";
+export * from "./companionMessage";
+export * from "./companionMessageRole";
+export * from "./companionReply";
 export * from "./healthStatus";

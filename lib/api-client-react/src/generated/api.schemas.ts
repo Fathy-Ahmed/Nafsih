@@ -8,3 +8,37 @@
 export interface HealthStatus {
   status: string;
 }
+
+export type CompanionMessageRole =
+  (typeof CompanionMessageRole)[keyof typeof CompanionMessageRole];
+
+export const CompanionMessageRole = {
+  user: "user",
+  assistant: "assistant",
+} as const;
+
+export interface CompanionMessage {
+  role: CompanionMessageRole;
+  /**
+   * @minLength 1
+   * @maxLength 4000
+   */
+  content: string;
+}
+
+export interface CompanionChatRequest {
+  /**
+   * Optional mood tag picked by the user (e.g. "متوتر", "حزين", "قلِق")
+   * @maxLength 60
+   */
+  mood?: string;
+  /**
+   * @minItems 1
+   * @maxItems 30
+   */
+  messages: CompanionMessage[];
+}
+
+export interface CompanionReply {
+  reply: string;
+}

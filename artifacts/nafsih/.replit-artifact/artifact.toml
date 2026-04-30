@@ -1,0 +1,27 @@
+kind = "mobile"
+previewPath = "/nafsih/"
+title = "Nafsih — نفسيه"
+version = "1.0.0"
+id = "artifacts/nafsih"
+router = "expo-domain"
+
+[[integratedSkills]]
+name = "expo"
+version = "1.0.0"
+
+[[services]]
+ensurePreviewReachable = "/status"
+name = "expo"
+paths = [ "/nafsih/" ]
+localPort = 25941
+
+[services.development]
+run = "pnpm --filter @workspace/nafsih run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/nafsih", "run", "build" ]
+run = [ "pnpm", "--filter", "@workspace/nafsih", "run", "serve" ]
+
+[services.env]
+PORT = "25941"
+BASE_PATH = "/nafsih/"
