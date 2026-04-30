@@ -1,0 +1,37 @@
+@import url('https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700;800&family=Tajawal:wght@300;400;500;700&display=swap');
+
+.nafsih-app {
+  --nafsih-bg: #F7F5F0;
+  --nafsih-surface: #FFFFFF;
+  --nafsih-primary: #2B4C3F; /* Earthy sage green */
+  --nafsih-primary-light: #E4EAE5;
+  --nafsih-secondary: #BFA588; /* Warm sand/gold */
+  --nafsih-text: #212523;
+  --nafsih-text-muted: #6B726B;
+  --nafsih-accent: #8E6855; /* Dusty blush / terracotta */
+  
+  --font-cairo: 'Cairo', sans-serif;
+  --font-tajawal: 'Tajawal', sans-serif;
+}
+
+.font-cairo {
+  font-family: var(--font-cairo);
+}
+.font-tajawal {
+  font-family: var(--font-tajawal);
+}
+
+.nafsih-pattern {
+  background-image: radial-gradient(var(--nafsih-secondary) 1px, transparent 1px);
+  background-size: 20px 20px;
+  opacity: 0.1;
+}
+
+.mashrabiya-bg {
+  background: 
+    linear-gradient(135deg, rgba(191, 165, 136, 0.05) 25%, transparent 25%) -10px 0,
+    linear-gradient(225deg, rgba(191, 165, 136, 0.05) 25%, transparent 25%) -10px 0,
+    linear-gradient(315deg, rgba(191, 165, 136, 0.05) 25%, transparent 25%),
+    linear-gradient(45deg, rgba(191, 165, 136, 0.05) 25%, transparent 25%);
+  background-size: 20px 20px;
+}
