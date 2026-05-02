@@ -11,6 +11,15 @@ import {
   TextInput,
   View,
 } from "react-native";
+import Animated, {
+  Easing,
+  useAnimatedStyle,
+  useSharedValue,
+  withRepeat,
+  withSequence,
+  withTiming,
+  cancelAnimation,
+} from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 
@@ -19,6 +28,7 @@ import { MessageBubble } from "@/components/MessageBubble";
 import { COMPANION_OPENERS, MOODS } from "@/constants/arabic";
 import { useApp, type ChatMessage } from "@/contexts/AppContext";
 import { useColors } from "@/hooks/useColors";
+import { useVoiceInput } from "@/hooks/useVoiceInput";
 
 function genId(): string {
   return Date.now().toString() + Math.random().toString(36).slice(2, 8);
@@ -34,14 +44,64 @@ export default function CompanionScreen() {
   const { chat, todayMood, appendChat, resetChat } = useApp();
   const chatMutation = useCompanionChat();
   const [draft, setDraft] = useState("");
+  const [voiceHint, setVoiceHint] = useState<string | null>(null);
   const listRef = useRef<FlatList<ChatMessage>>(null);
+  const inputRef = useRef<TextInput>(null);
+
+  const pulseScale = useSharedValue(1);
+  const pulseOpacity = useSharedValue(1);
+
+  const { state: voiceState, start: startVoice, stop: stopVoice, isSupported: voiceSupported } =
+    useVoiceInput({
+      lang: "ar-SA",
+      onTranscript: (text) => {
+        setDraft(text);
+        setVoiceHint(null);
+      },
+      onError: (msg) => {
+        setVoiceHint(msg);
+        setTimeout(() => setVoiceHint(null), 3000);
+      },
+    });
+
+  const isListening = voiceState === "listening";
+
+  useEffect(() => {
+    if (isListening) {
+      pulseScale.value = withRepeat(
+        withSequence(
+          withTiming(1.25, { duration: 700, easing: Easing.inOut(Easing.quad) }),
+          withTiming(1.0, { duration: 700, easing: Easing.inOut(Easing.quad) })
+        ),
+        -1,
+        false
+      );
+      pulseOpacity.value = withRepeat(
+        withSequence(
+          withTiming(0.35, { duration: 700 }),
+          withTiming(0.0, { duration: 700 })
+        ),
+        -1,
+        false
+      );
+    } else {
+      cancelAnimation(pulseScale);
+      cancelAnimation(pulseOpacity);
+      pulseScale.value = withTiming(1, { duration: 200 });
+      pulseOpacity.value = withTiming(0, { duration: 200 });
+    }
+  }, [isListening, pulseScale, pulseOpacity]);
+
+  const pulseRingStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: pulseScale.value }],
+    opacity: pulseOpacity.value,
+  }));
 
   const moodLabel = useMemo(
     () => MOODS.find((m) => m.id === todayMood)?.label ?? null,
     [todayMood]
   );
 
-  // Seed an opener on first mount if no history
   useEffect(() => {
     if (chat.length === 0) {
       void appendChat({
@@ -65,7 +125,9 @@ export default function CompanionScreen() {
   async function handleSend() {
     const text = draft.trim();
     if (!text || chatMutation.isPending) return;
+    if (isListening) stopVoice();
     setDraft("");
+    setVoiceHint(null);
     if (Platform.OS !== "web") {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     }
@@ -84,12 +146,7 @@ export default function CompanionScreen() {
     }));
 
     chatMutation.mutate(
-      {
-        data: {
-          messages: history,
-          mood: todayMood ?? undefined,
-        },
-      },
+      { data: { messages: history, mood: todayMood ?? undefined } },
       {
         onSuccess: async (res) => {
           await appendChat({
@@ -103,8 +160,7 @@ export default function CompanionScreen() {
           await appendChat({
             id: genId(),
             role: "assistant",
-            content:
-              "تعذّر الاتصال الآن. خذ نفساً عميقاً وأعد المحاولة بعد لحظات بإذن الله.",
+            content: "تعذّر الاتصال الآن. خذ نفساً عميقاً وأعد المحاولة بعد لحظات بإذن الله.",
             ts: Date.now(),
           });
         },
@@ -112,17 +168,30 @@ export default function CompanionScreen() {
     );
   }
 
+  function handleMicPress() {
+    if (Platform.OS !== "web") {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    }
+    if (isListening) {
+      stopVoice();
+    } else {
+      setDraft("");
+      startVoice();
+      // Dismiss keyboard so mic is unobstructed
+      inputRef.current?.blur();
+    }
+  }
+
   const data = chatMutation.isPending
     ? [
         ...chat,
-        {
-          id: "pending",
-          role: "assistant" as const,
-          content: "",
-          ts: Date.now(),
-        },
+        { id: "pending", role: "assistant" as const, content: "", ts: Date.now() },
       ]
     : chat;
+
+  const canSend = draft.trim().length > 0 && !chatMutation.isPending;
+  const micColor = isListening ? colors.accentForeground : colors.mutedForeground;
+  const micBg = isListening ? colors.accent : colors.muted;
 
   return (
     <SafeAreaView
@@ -138,7 +207,7 @@ export default function CompanionScreen() {
               onPress={() => void resetChat()}
               accessibilityRole="button"
               accessibilityLabel="بدء محادثة جديدة"
-              style={[styles.resetBtn, { backgroundColor: colors.muted }]}
+              style={[styles.iconBtn, { backgroundColor: colors.muted }]}
             >
               <Feather name="refresh-ccw" size={16} color={colors.foreground} />
             </Pressable>
@@ -169,27 +238,45 @@ export default function CompanionScreen() {
           }
         />
 
+        {/* Voice status banner */}
+        {(isListening || voiceHint) ? (
+          <View
+            style={[
+              styles.voiceBanner,
+              {
+                backgroundColor: isListening ? colors.accent : colors.muted,
+                borderColor: isListening ? colors.blushSoft : colors.border,
+              },
+            ]}
+          >
+            <Text
+              style={[
+                styles.voiceBannerText,
+                { color: isListening ? colors.accentForeground : colors.foreground },
+              ]}
+            >
+              {isListening ? "أنا أستمع... تحدّث بالعربية" : (voiceHint ?? "")}
+            </Text>
+          </View>
+        ) : null}
+
+        {/* Composer row */}
         <View
           style={[
             styles.composer,
-            {
-              backgroundColor: colors.card,
-              borderColor: colors.border,
-            },
+            { backgroundColor: colors.card, borderColor: colors.border },
           ]}
         >
+          {/* Send button — left side (RTL: appears right-most visually) */}
           <Pressable
             onPress={handleSend}
-            disabled={!draft.trim() || chatMutation.isPending}
+            disabled={!canSend}
             accessibilityRole="button"
             accessibilityLabel="إرسال"
             style={({ pressed }) => [
-              styles.sendBtn,
+              styles.circleBtn,
               {
-                backgroundColor:
-                  draft.trim() && !chatMutation.isPending
-                    ? colors.primary
-                    : colors.muted,
+                backgroundColor: canSend ? colors.primary : colors.muted,
                 opacity: pressed ? 0.85 : 1,
               },
             ]}
@@ -197,24 +284,59 @@ export default function CompanionScreen() {
             <Feather
               name="arrow-left"
               size={20}
-              color={
-                draft.trim() && !chatMutation.isPending
-                  ? colors.primaryForeground
-                  : colors.mutedForeground
-              }
+              color={canSend ? colors.primaryForeground : colors.mutedForeground}
             />
           </Pressable>
+
+          {/* Text input */}
           <TextInput
+            ref={inputRef}
             value={draft}
-            onChangeText={setDraft}
-            placeholder="اكتب ما يجول في بالك..."
-            placeholderTextColor={colors.mutedForeground}
+            onChangeText={(t) => {
+              setDraft(t);
+              if (isListening && t.length === 0) {
+                // user cleared — don't auto-stop
+              }
+            }}
+            placeholder={isListening ? "جارٍ الاستماع..." : "اكتب أو تحدّث..."}
+            placeholderTextColor={
+              isListening ? colors.accent : colors.mutedForeground
+            }
             style={[styles.input, { color: colors.foreground }]}
             multiline
             textAlign="right"
             maxLength={1200}
             editable={!chatMutation.isPending}
           />
+
+          {/* Mic button — right side (RTL: appears left-most visually) */}
+          {voiceState !== "unsupported" ? (
+            <View style={styles.micWrap}>
+              {/* Pulse ring behind the button */}
+              <Animated.View
+                style={[
+                  styles.pulseRing,
+                  { backgroundColor: colors.accent },
+                  pulseRingStyle,
+                ]}
+              />
+              <Pressable
+                onPress={handleMicPress}
+                accessibilityRole="button"
+                accessibilityLabel={isListening ? "أوقف الاستماع" : "ابدأ الإملاء الصوتي"}
+                style={({ pressed }) => [
+                  styles.circleBtn,
+                  { backgroundColor: micBg, opacity: pressed ? 0.85 : 1 },
+                ]}
+              >
+                <Feather
+                  name={isListening ? "mic-off" : "mic"}
+                  size={18}
+                  color={micColor}
+                />
+              </Pressable>
+            </View>
+          ) : null}
         </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -225,6 +347,20 @@ const styles = StyleSheet.create({
   list: {
     paddingVertical: 12,
     paddingBottom: 16,
+  },
+  voiceBanner: {
+    marginHorizontal: 16,
+    marginBottom: 6,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 16,
+    borderWidth: 1,
+    alignItems: "center",
+  },
+  voiceBannerText: {
+    fontFamily: "Cairo_600SemiBold",
+    fontSize: 13,
+    writingDirection: "rtl",
   },
   composer: {
     flexDirection: "row",
@@ -247,14 +383,26 @@ const styles = StyleSheet.create({
     fontSize: 15,
     writingDirection: "rtl",
   },
-  sendBtn: {
+  circleBtn: {
     width: 42,
     height: 42,
     borderRadius: 21,
     alignItems: "center",
     justifyContent: "center",
   },
-  resetBtn: {
+  micWrap: {
+    width: 42,
+    height: 42,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  pulseRing: {
+    position: "absolute",
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+  },
+  iconBtn: {
     width: 38,
     height: 38,
     borderRadius: 19,
