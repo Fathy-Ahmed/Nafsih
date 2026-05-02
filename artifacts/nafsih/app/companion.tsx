@@ -1,6 +1,6 @@
 import { useCompanionChat } from "@workspace/api-client-react";
 import * as Haptics from "expo-haptics";
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   FlatList,
   KeyboardAvoidingView,
@@ -13,12 +13,12 @@ import {
 } from "react-native";
 import Animated, {
   Easing,
+  cancelAnimation,
   useAnimatedStyle,
   useSharedValue,
   withRepeat,
   withSequence,
   withTiming,
-  cancelAnimation,
 } from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
@@ -48,15 +48,78 @@ export default function CompanionScreen() {
   const listRef = useRef<FlatList<ChatMessage>>(null);
   const inputRef = useRef<TextInput>(null);
 
+  // Keep a ref mirror of draft so callbacks can read it without stale closure
+  const draftRef = useRef("");
+  const chatRef = useRef(chat);
+  const todayMoodRef = useRef(todayMood);
+  const isPendingRef = useRef(chatMutation.isPending);
+
+  useEffect(() => { draftRef.current = draft; }, [draft]);
+  useEffect(() => { chatRef.current = chat; }, [chat]);
+  useEffect(() => { todayMoodRef.current = todayMood; }, [todayMood]);
+  useEffect(() => { isPendingRef.current = chatMutation.isPending; }, [chatMutation.isPending]);
+
   const pulseScale = useSharedValue(1);
   const pulseOpacity = useSharedValue(1);
+
+  // Core send logic — accepts explicit text override for voice auto-send
+  const doSend = useCallback(async (textOverride?: string) => {
+    const text = (textOverride ?? draftRef.current).trim();
+    if (!text || isPendingRef.current) return;
+    setDraft("");
+    draftRef.current = "";
+    setVoiceHint(null);
+    if (Platform.OS !== "web") {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+    const userMsg: ChatMessage = {
+      id: genId(),
+      role: "user",
+      content: text,
+      ts: Date.now(),
+    };
+    await appendChat(userMsg);
+    const history = [...chatRef.current, userMsg].slice(-12).map((m) => ({
+      role: m.role,
+      content: m.content,
+    }));
+    chatMutation.mutate(
+      { data: { messages: history, mood: todayMoodRef.current ?? undefined } },
+      {
+        onSuccess: async (res) => {
+          await appendChat({
+            id: genId(),
+            role: "assistant",
+            content: res.reply,
+            ts: Date.now(),
+          });
+        },
+        onError: async () => {
+          await appendChat({
+            id: genId(),
+            role: "assistant",
+            content: "تعذّر الاتصال الآن. خذ نفساً عميقاً وأعد المحاولة بعد لحظات بإذن الله.",
+            ts: Date.now(),
+          });
+        },
+      }
+    );
+  }, [appendChat, chatMutation]);
 
   const { state: voiceState, start: startVoice, stop: stopVoice, isSupported: voiceSupported } =
     useVoiceInput({
       lang: "ar-SA",
       onTranscript: (text) => {
         setDraft(text);
+        draftRef.current = text;
         setVoiceHint(null);
+      },
+      onFinalTranscript: (text) => {
+        // Auto-send: voice session ended with a confirmed result
+        setDraft(text);
+        draftRef.current = text;
+        setVoiceHint(null);
+        void doSend(text);
       },
       onError: (msg) => {
         setVoiceHint(msg);
@@ -70,16 +133,16 @@ export default function CompanionScreen() {
     if (isListening) {
       pulseScale.value = withRepeat(
         withSequence(
-          withTiming(1.25, { duration: 700, easing: Easing.inOut(Easing.quad) }),
-          withTiming(1.0, { duration: 700, easing: Easing.inOut(Easing.quad) })
+          withTiming(1.28, { duration: 750, easing: Easing.inOut(Easing.quad) }),
+          withTiming(1.0, { duration: 750, easing: Easing.inOut(Easing.quad) })
         ),
         -1,
         false
       );
       pulseOpacity.value = withRepeat(
         withSequence(
-          withTiming(0.35, { duration: 700 }),
-          withTiming(0.0, { duration: 700 })
+          withTiming(0.38, { duration: 750 }),
+          withTiming(0.0, { duration: 750 })
         ),
         -1,
         false
@@ -90,7 +153,7 @@ export default function CompanionScreen() {
       pulseScale.value = withTiming(1, { duration: 200 });
       pulseOpacity.value = withTiming(0, { duration: 200 });
     }
-  }, [isListening, pulseScale, pulseOpacity]);
+  }, [isListening, pulseOpacity, pulseScale]);
 
   const pulseRingStyle = useAnimatedStyle(() => ({
     transform: [{ scale: pulseScale.value }],
@@ -122,52 +185,6 @@ export default function CompanionScreen() {
     }
   }, [chat.length]);
 
-  async function handleSend() {
-    const text = draft.trim();
-    if (!text || chatMutation.isPending) return;
-    if (isListening) stopVoice();
-    setDraft("");
-    setVoiceHint(null);
-    if (Platform.OS !== "web") {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    }
-
-    const userMsg: ChatMessage = {
-      id: genId(),
-      role: "user",
-      content: text,
-      ts: Date.now(),
-    };
-    await appendChat(userMsg);
-
-    const history = [...chat, userMsg].slice(-12).map((m) => ({
-      role: m.role,
-      content: m.content,
-    }));
-
-    chatMutation.mutate(
-      { data: { messages: history, mood: todayMood ?? undefined } },
-      {
-        onSuccess: async (res) => {
-          await appendChat({
-            id: genId(),
-            role: "assistant",
-            content: res.reply,
-            ts: Date.now(),
-          });
-        },
-        onError: async () => {
-          await appendChat({
-            id: genId(),
-            role: "assistant",
-            content: "تعذّر الاتصال الآن. خذ نفساً عميقاً وأعد المحاولة بعد لحظات بإذن الله.",
-            ts: Date.now(),
-          });
-        },
-      }
-    );
-  }
-
   function handleMicPress() {
     if (Platform.OS !== "web") {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -176,8 +193,8 @@ export default function CompanionScreen() {
       stopVoice();
     } else {
       setDraft("");
+      draftRef.current = "";
       startVoice();
-      // Dismiss keyboard so mic is unobstructed
       inputRef.current?.blur();
     }
   }
@@ -190,8 +207,15 @@ export default function CompanionScreen() {
     : chat;
 
   const canSend = draft.trim().length > 0 && !chatMutation.isPending;
-  const micColor = isListening ? colors.accentForeground : colors.mutedForeground;
   const micBg = isListening ? colors.accent : colors.muted;
+  const micColor = isListening ? colors.accentForeground : colors.mutedForeground;
+
+  const bannerText = isListening
+    ? "أنا أستمع... تحدّث بالعربية"
+    : voiceState === "processing"
+    ? "جارٍ الإرسال..."
+    : voiceHint ?? "";
+  const showBanner = isListening || voiceState === "processing" || !!voiceHint;
 
   return (
     <SafeAreaView
@@ -238,38 +262,47 @@ export default function CompanionScreen() {
           }
         />
 
-        {/* Voice status banner */}
-        {(isListening || voiceHint) ? (
+        {showBanner ? (
           <View
             style={[
               styles.voiceBanner,
               {
-                backgroundColor: isListening ? colors.accent : colors.muted,
-                borderColor: isListening ? colors.blushSoft : colors.border,
+                backgroundColor:
+                  isListening ? colors.accent
+                  : voiceState === "processing" ? colors.primary
+                  : colors.muted,
+                borderColor:
+                  isListening ? colors.blushSoft
+                  : voiceState === "processing" ? colors.sageGlow
+                  : colors.border,
               },
             ]}
           >
             <Text
               style={[
                 styles.voiceBannerText,
-                { color: isListening ? colors.accentForeground : colors.foreground },
+                {
+                  color:
+                    isListening ? colors.accentForeground
+                    : voiceState === "processing" ? colors.primaryForeground
+                    : colors.foreground,
+                },
               ]}
             >
-              {isListening ? "أنا أستمع... تحدّث بالعربية" : (voiceHint ?? "")}
+              {bannerText}
             </Text>
           </View>
         ) : null}
 
-        {/* Composer row */}
         <View
           style={[
             styles.composer,
             { backgroundColor: colors.card, borderColor: colors.border },
           ]}
         >
-          {/* Send button — left side (RTL: appears right-most visually) */}
+          {/* Send arrow */}
           <Pressable
-            onPress={handleSend}
+            onPress={() => void doSend()}
             disabled={!canSend}
             accessibilityRole="button"
             accessibilityLabel="إرسال"
@@ -294,9 +327,7 @@ export default function CompanionScreen() {
             value={draft}
             onChangeText={(t) => {
               setDraft(t);
-              if (isListening && t.length === 0) {
-                // user cleared — don't auto-stop
-              }
+              draftRef.current = t;
             }}
             placeholder={isListening ? "جارٍ الاستماع..." : "اكتب أو تحدّث..."}
             placeholderTextColor={
@@ -306,13 +337,12 @@ export default function CompanionScreen() {
             multiline
             textAlign="right"
             maxLength={1200}
-            editable={!chatMutation.isPending}
+            editable={!chatMutation.isPending && !isListening}
           />
 
-          {/* Mic button — right side (RTL: appears left-most visually) */}
+          {/* Mic button */}
           {voiceState !== "unsupported" ? (
             <View style={styles.micWrap}>
-              {/* Pulse ring behind the button */}
               <Animated.View
                 style={[
                   styles.pulseRing,

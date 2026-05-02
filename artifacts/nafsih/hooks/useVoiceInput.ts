@@ -4,7 +4,10 @@ import { Platform } from "react-native";
 export type VoiceState = "idle" | "listening" | "processing" | "unsupported";
 
 type UseVoiceInputOptions = {
+  /** Called with interim (in-progress) transcript text as the user speaks. */
   onTranscript: (text: string) => void;
+  /** Called once with the final confirmed transcript when recognition ends. Auto-send hook. */
+  onFinalTranscript?: (text: string) => void;
   onError?: (msg: string) => void;
   lang?: string;
 };
@@ -16,7 +19,10 @@ function getSpeechRecognitionCtor():
       continuous: boolean;
       maxAlternatives: number;
       onstart: (() => void) | null;
-      onresult: ((e: { resultIndex: number; results: { isFinal: boolean; [i: number]: { transcript: string } | undefined }[] }) => void) | null;
+      onresult: ((e: {
+        resultIndex: number;
+        results: { isFinal: boolean; [i: number]: { transcript: string } | undefined }[];
+      }) => void) | null;
       onerror: ((e: { error: string }) => void) | null;
       onend: (() => void) | null;
       start: () => void;
@@ -32,30 +38,39 @@ function getSpeechRecognitionCtor():
 
 export function useVoiceInput({
   onTranscript,
+  onFinalTranscript,
   onError,
   lang = "ar-SA",
 }: UseVoiceInputOptions) {
   const [state, setState] = useState<VoiceState>("idle");
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const recognitionRef = useRef<any>(null);
+  const finalTextRef = useRef<string>("");
 
   const Ctor = getSpeechRecognitionCtor();
   const isSupported = Ctor !== null;
 
+  // Keep callbacks in refs so they don't stale-close over old values
+  const onTranscriptRef = useRef(onTranscript);
+  const onFinalTranscriptRef = useRef(onFinalTranscript);
+  const onErrorRef = useRef(onError);
+  useEffect(() => { onTranscriptRef.current = onTranscript; }, [onTranscript]);
+  useEffect(() => { onFinalTranscriptRef.current = onFinalTranscript; }, [onFinalTranscript]);
+  useEffect(() => { onErrorRef.current = onError; }, [onError]);
+
   useEffect(() => {
     if (!isSupported) setState("unsupported");
-    return () => {
-      recognitionRef.current?.abort();
-    };
+    return () => { recognitionRef.current?.abort(); };
   }, [isSupported]);
 
   const start = useCallback(() => {
     if (!Ctor) {
-      onError?.("التفريغ الصوتي غير متاح في هذا المتصفح.");
+      onErrorRef.current?.("التفريغ الصوتي غير متاح في هذا المتصفح.");
       return;
     }
     if (state === "listening") return;
 
+    finalTextRef.current = "";
     const recognition = new Ctor();
     recognition.lang = lang;
     recognition.interimResults = true;
@@ -81,37 +96,41 @@ export function useVoiceInput({
         }
       }
       if (final) {
+        finalTextRef.current = final.trim();
         setState("processing");
-        onTranscript(final.trim());
+        onTranscriptRef.current(final.trim());
       } else if (interim) {
-        onTranscript(interim.trim());
+        onTranscriptRef.current(interim.trim());
       }
     };
 
     recognition.onerror = (event: { error: string }) => {
       setState("idle");
+      finalTextRef.current = "";
       if (event.error === "not-allowed") {
-        onError?.("يرجى السماح بالوصول إلى الميكروفون.");
+        onErrorRef.current?.("يرجى السماح بالوصول إلى الميكروفون.");
       } else if (event.error === "no-speech") {
-        onError?.("لم يُكتشف صوت. حاول مجدداً.");
+        onErrorRef.current?.("لم يُكتشف صوت. حاول مجدداً.");
       } else if (event.error !== "aborted") {
-        onError?.("تعذّر التعرف على الصوت. حاول مجدداً.");
+        onErrorRef.current?.("تعذّر التعرف على الصوت. حاول مجدداً.");
       }
     };
 
     recognition.onend = () => {
-      setState((s: VoiceState) =>
-        s === "listening" || s === "processing" ? "idle" : s
-      );
+      const captured = finalTextRef.current;
+      setState("idle");
+      finalTextRef.current = "";
+      if (captured) {
+        onFinalTranscriptRef.current?.(captured);
+      }
     };
 
     recognitionRef.current = recognition;
     recognition.start();
-  }, [Ctor, lang, onError, onTranscript, state]);
+  }, [Ctor, lang, state]);
 
   const stop = useCallback(() => {
     recognitionRef.current?.stop();
-    setState("idle");
   }, []);
 
   return { state, start, stop, isSupported };
