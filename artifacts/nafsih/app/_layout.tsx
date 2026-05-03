@@ -38,7 +38,10 @@ function RootRouter() {
     if (!hydrated) return;
     const first = segments[0];
     const isWelcome = first === "welcome";
-    if (!onboarded && !isWelcome) {
+    // Only gate the main tabs behind onboarding — push routes (companion,
+    // breathing) are always accessible so deep links and canvas previews work.
+    const isOnTabs = first === "(tabs)";
+    if (!onboarded && isOnTabs) {
       router.replace("/welcome");
     } else if (onboarded && isWelcome) {
       router.replace("/");
