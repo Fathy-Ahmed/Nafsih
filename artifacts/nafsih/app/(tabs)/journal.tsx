@@ -17,6 +17,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { MOODS, arabicNumber, dateLabelArabic } from "@/constants/arabic";
 import { useApp, type JournalEntry } from "@/contexts/AppContext";
 import { useColors } from "@/hooks/useColors";
+import { useVoiceInput } from "@/hooks/useVoiceInput";
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -110,6 +111,7 @@ export default function JournalScreen() {
   const [showCompose, setShowCompose]   = useState(false);
   const [showAll,     setShowAll]       = useState(false);
   const [draft,       setDraft]         = useState("");
+  const [voiceHint,   setVoiceHint]     = useState<string | null>(null);
 
   const today = todayKey();
   const last7 = useMemo(() => getLast7Days(), []);
@@ -129,6 +131,23 @@ export default function JournalScreen() {
     ACHIEVEMENTS.map((a) => ({ ...a, done: a.unlocked(streak, journal) })),
   [streak, journal]);
 
+  const {
+    state: voiceState,
+    start: startVoice,
+    stop: stopVoice,
+    isSupported: voiceSupported,
+  } = useVoiceInput({
+    lang: "ar-SA",
+    onTranscript: (text) => setDraft(text),
+    onFinalTranscript: (text) => setDraft(text),
+    onError: (msg) => {
+      setVoiceHint(msg);
+      setTimeout(() => setVoiceHint(null), 3000);
+    },
+  });
+
+  const isListening = voiceState === "listening";
+
   async function handleSave() {
     const text = draft.trim();
     if (!text) return;
@@ -137,7 +156,21 @@ export default function JournalScreen() {
     }
     await addJournal(text);
     setDraft("");
+    setVoiceHint(null);
+    if (isListening) {
+      stopVoice();
+    }
     setShowCompose(false);
+  }
+
+  function handleVoicePress() {
+    if (isListening) {
+      stopVoice();
+      return;
+    }
+    setDraft("");
+    setVoiceHint(null);
+    startVoice();
   }
 
   const visibleEntries = showAll ? journal : journal.slice(0, 3);
@@ -330,11 +363,37 @@ export default function JournalScreen() {
               <View style={styles.modalHandle} />
 
               <View style={styles.modalHeader}>
+              <View style={styles.headerActions}>
+                {voiceSupported ? (
+                  <Pressable
+                    onPress={handleVoicePress}
+                    style={[
+                      styles.voiceBtn,
+                      {
+                        backgroundColor: isListening ? colors.accent : colors.muted,
+                        borderColor: isListening ? colors.blushSoft : colors.border,
+                      },
+                    ]}
+                  >
+                    <Feather
+                      name={isListening ? "mic-off" : "mic"}
+                      size={17}
+                      color={isListening ? colors.accentForeground : colors.foreground}
+                    />
+                  </Pressable>
+                ) : null}
+              </View>
                 <Pressable onPress={() => { setShowCompose(false); setDraft(""); }}>
                   <Feather name="x" size={20} color={colors.mutedForeground} />
                 </Pressable>
                 <Text style={[styles.modalTitle, { color: colors.foreground }]}>تأمّل جديد</Text>
               </View>
+
+            {voiceHint ? (
+              <View style={[styles.voiceHint, { backgroundColor: colors.muted, borderColor: colors.border }]}>
+                <Text style={[styles.voiceHintText, { color: colors.foreground }]}>{voiceHint}</Text>
+              </View>
+            ) : null}
 
               <Text style={[styles.modalDate, { color: colors.secondary }]}>
                 {dateLabelArabic(new Date())}
@@ -353,6 +412,7 @@ export default function JournalScreen() {
                 ]}
                 textAlign="right"
                 maxLength={2000}
+                editable={!isListening}
               />
 
               <Pressable
@@ -682,10 +742,35 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
   },
+  headerActions: {
+    width: 36,
+    alignItems: "flex-start",
+  },
+  voiceBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   modalTitle: {
     fontFamily: "Cairo_700Bold",
     fontSize: 18,
     writingDirection: "rtl",
+  },
+  voiceHint: {
+    borderWidth: 1,
+    borderRadius: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  voiceHintText: {
+    fontFamily: "Cairo_500Medium",
+    fontSize: 13,
+    lineHeight: 22,
+    writingDirection: "rtl",
+    textAlign: "right",
   },
   modalDate: {
     fontFamily: "Cairo_500Medium",
