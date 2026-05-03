@@ -483,6 +483,35 @@ export default function CompanionScreen() {
             },
           ]}
         >
+          {voiceState !== "unsupported" ? (
+            <Pressable
+              onPress={handleMicPress}
+              accessibilityRole="button"
+              accessibilityLabel={isListening ? "أوقف الاستماع" : "ابدأ الإملاء الصوتي"}
+              style={({ pressed }) => [
+                styles.voiceBtn,
+                {
+                  backgroundColor: isListening ? colors.accent : colors.muted,
+                  borderColor: isListening ? colors.blushSoft : colors.border,
+                  opacity: pressed ? 0.85 : 1,
+                },
+              ]}
+            >
+              <Animated.View
+                style={[
+                  styles.voiceRing,
+                  { backgroundColor: colors.accent },
+                  pulseRingStyle,
+                ]}
+              />
+              <Feather
+                name={isListening ? "mic-off" : "mic"}
+                size={18}
+                color={isListening ? colors.accentForeground : colors.foreground}
+              />
+            </Pressable>
+          ) : null}
+
           {/* Send arrow — left side (RTL: visually left = "end") */}
           <Pressable
             onPress={() => void doSend()}
@@ -734,6 +763,20 @@ const styles = StyleSheet.create({
     borderRadius: 28,
     borderWidth: 1,
     gap: 8,
+  },
+  voiceBtn: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  voiceRing: {
+    position: "absolute",
+    width: 42,
+    height: 42,
+    borderRadius: 21,
   },
   input: {
     flex: 1,
