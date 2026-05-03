@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/journal/"
+title = "Nafsih Journal — رحلتك"
+version = "1.0.0"
+id = "artifacts/nafsih-journal"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/journal/" ]
+localPort = 20723
+
+[services.development]
+run = "pnpm --filter @workspace/nafsih-journal run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/nafsih-journal", "run", "build" ]
+publicDir = "artifacts/nafsih-journal/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "20723"
+BASE_PATH = "/journal/"
